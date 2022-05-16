@@ -19,6 +19,8 @@ import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.OutputConfiguration;
 import android.hardware.camera2.params.SessionConfiguration;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.CamcorderProfile;
 import android.media.EncoderProfiles;
 import android.media.Image;
@@ -68,6 +70,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -274,6 +278,8 @@ class Camera
             .build();
   }
 
+
+
   @SuppressLint("MissingPermission")
   public void open(String imageFormatGroup) throws CameraAccessException {
     final ResolutionFeature resolutionFeature = cameraFeatures.getResolution();
@@ -289,11 +295,25 @@ class Camera
       return;
     }
 
+    CameraManager cameraManager = CameraUtils.getCameraManager(activity);
+    final String[] cameraIds = cameraManager.getCameraIdList();
+    // camera 0 is the main
+    CameraCharacteristics cameraCharacteristics =
+            cameraManager.getCameraCharacteristics(cameraIds[0]);
+    StreamConfigurationMap streamConfigurationMap = cameraCharacteristics
+            .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+    Size[] availableResolutionsArray;
+    availableResolutionsArray = streamConfigurationMap.getOutputSizes(ImageFormat.JPEG);
+    List<Size> availableResolutions = Arrays.asList(availableResolutionsArray);
+    // Sort by descending area size
+    Collections.sort(availableResolutions, new CompareSizesByArea());
+    Collections.reverse(availableResolutions);
+
     // Always capture using JPEG format.
     pictureImageReader =
         ImageReader.newInstance(
-            resolutionFeature.getCaptureSize().getWidth(),
-            resolutionFeature.getCaptureSize().getHeight(),
+            availableResolutions.get(0).getWidth(),
+            availableResolutions.get(0).getHeight(),
             ImageFormat.JPEG,
             1);
 
@@ -311,7 +331,7 @@ class Camera
             1);
 
     // Open the camera.
-    CameraManager cameraManager = CameraUtils.getCameraManager(activity);
+
     cameraManager.openCamera(
         cameraProperties.getCameraName(),
         new CameraDevice.StateCallback() {
@@ -1235,6 +1255,14 @@ class Camera
     @VisibleForTesting
     public static Handler create(Looper looper) {
       return new Handler(looper);
+    }
+  }
+
+  static class CompareSizesByArea implements Comparator<Size> {
+    @Override
+    public int compare(final Size lhs, final Size rhs) {
+      return Long.signum(
+              (long) lhs.getWidth() * lhs.getHeight() - (long) rhs.getWidth() * rhs.getHeight());
     }
   }
 }
